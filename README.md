@@ -19,7 +19,32 @@ on your own dashboard, and sync real MLB seasons that are checked against offici
 </tr>
 </table>
 
-**Stack:** FastAPI + SQLAlchemy · PostgreSQL (SQLite fallback for local dev) · React + Vite + Recharts
+## Why I built this
+
+I pitched at BYU. I wanted one place where a coach could scout pitchers at every level, from
+high school and the transfer portal up through the minors and MLB, and where a player could
+track their own numbers and get pointed in the right direction when a trend turns.
+
+### How I built it
+
+I designed the product and directed the build, and wrote the code with
+[Claude Code](https://claude.com/claude-code) as an AI pair programmer. The decisions that
+shaped it were mine:
+
+- **What to measure.** The stats a pitching coach actually uses (zone%, chase%, CSW%,
+  first-pitch strikes, FIP next to ERA) are in one registry, so adding a new stat is one entry.
+- **Scouting by level.** High school, college, transfer portal, each minor-league level and MLB,
+  with the details each level needs: grad year and commitment, college class, parent club.
+- **Accounts and a personal dugout.** Track any pitcher, pick the stats on your dashboard, set
+  goals, and get suggestions when a trend is heading the wrong way.
+- **Accuracy over convenience.** Real players sync from MLB's official sources, and every sync
+  is checked against MLB's published totals. Building that check caught two real bugs:
+  Statcast counts pitch-clock violations as pitches, and mixing a player's Triple-A and MLB
+  games gives an ERA that matches neither official line.
+- **Honest labels.** Demo players are marked as simulated, and every number says where it came
+  from.
+
+ + SQLAlchemy · PostgreSQL (SQLite fallback for local dev) · React + Vite + Recharts
 
 ```
 backend/
