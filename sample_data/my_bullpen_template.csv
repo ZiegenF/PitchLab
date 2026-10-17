@@ -1,0 +1,6 @@
+player_name,game_date,opponent,pitch_type,release_speed,release_spin_rate,plate_x,plate_z,description,events,inning,balls,strikes
+"Pitcher, Me",2026-10-15,BULLPEN,FF,88.4,2210,0.12,2.81,called_strike,,1,0,0
+"Pitcher, Me",2026-10-15,BULLPEN,FF,88.9,2240,-0.45,3.62,ball,,1,0,1
+"Pitcher, Me",2026-10-15,BULLPEN,CU,72.1,2380,-0.30,1.41,swinging_strike,,1,1,1
+"Pitcher, Me",2026-10-15,BULLPEN,CH,79.6,1650,0.55,1.88,foul,,1,1,2
+"Pitcher, Me",2026-10-15,BULLPEN,SL,78.3,2290,-0.92,1.62,swinging_strike,strikeout,1,1,2
