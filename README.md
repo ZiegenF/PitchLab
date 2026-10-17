@@ -1,7 +1,23 @@
 # PitchLab
 
+[![tests](https://github.com/ZiegenF/PitchLab/actions/workflows/tests.yml/badge.svg)](https://github.com/ZiegenF/PitchLab/actions/workflows/tests.yml)
+
 A full-stack pitching analytics app: ingest pitch-by-pitch data, compute traditional and
-pitch-level stats, and visualize them.
+pitch-level stats, and visualize them. Scout pitchers from high school through MLB, track them
+on your own dashboard, and sync real MLB seasons that are checked against official totals.
+
+![Scout page: pitchers from high school to MLB as baseball cards, with level tabs and filters](docs/screenshots/scout.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/player.png" alt="Tarik Skubal's 2024 season: stat tiles, official-data panel, Coach's Corner and Statcast arsenal"></td>
+<td width="50%"><img src="docs/screenshots/split-season.png" alt="Paul Skenes's 2024 season split across Triple-A and MLB, each level matching MLB's official line"></td>
+</tr>
+<tr>
+<td><b>Real data:</b> Tarik Skubal's 2024 season from the MLB Stats API and Statcast</td>
+<td><b>Verified:</b> every level checked against MLB's official totals</td>
+</tr>
+</table>
 
 **Stack:** FastAPI + SQLAlchemy · PostgreSQL (SQLite fallback for local dev) · React + Vite + Recharts
 

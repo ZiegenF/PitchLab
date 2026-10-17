@@ -11,7 +11,14 @@ export const PITCH_TYPES = {
   FS: { name: "Splitter", color: "var(--series-8)" },
 };
 
-export const pitchName = (t) => PITCH_TYPES[t]?.name ?? t;
+// Rarer Statcast codes: named, but drawn in muted ink rather than a ninth series color.
+const OTHER_NAMES = {
+  KC: "Knuckle Curve", SV: "Slurve", FT: "2-Seam Fastball", FO: "Forkball", SC: "Screwball",
+  KN: "Knuckleball", EP: "Eephus", CS: "Slow Curve", FA: "Fastball", PO: "Pitchout",
+  UN: "Untracked",
+};
+
+export const pitchName = (t) => PITCH_TYPES[t]?.name ?? OTHER_NAMES[t] ?? t;
 export const pitchColor = (t) => PITCH_TYPES[t]?.color ?? "var(--text-muted)";
 
 // Zone plot outcome groups - three categories, which keeps scatter colors distinguishable
