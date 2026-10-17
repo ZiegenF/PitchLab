@@ -8,7 +8,8 @@ from ..access import flags, get_editable, get_visible, tracked_ids, visible_filt
 from ..auth import current_user, require_user, utcnow
 from ..db import get_db
 from ..insights import build_insights, evaluate_goal
-from ..models import Appearance, Goal, Pitch, Pitcher, TrackedPitcher, User
+from ..models import (BOX_MANUAL, SOURCE_MANUAL, Appearance, Goal, Pitch, Pitcher,
+                      TrackedPitcher, User)
 from ..photos import MAX_PHOTO_BYTES, image_ext, remove_photo, save_photo
 from ..schemas import (AppearanceOut, GameCreate, GoalIn, GoalOut, PitchOut, PitcherCreate,
                        PitcherListItem, PitcherOut, PitcherUpdate, StatDefinition)
@@ -64,7 +65,8 @@ def list_pitchers(level: list[str] = Query(default=[], description="e.g. ?level=
     tracked = tracked_ids(db, user)
     out = []
     for p in pitchers:
-        s = analytics.compute_stats({**analytics.box_score_totals(p.appearances), "pitches": 0},
+        s = analytics.compute_stats({**analytics.box_score_totals(analytics.stat_appearances(p)),
+                                     "pitches": 0},
                                     group="traditional")
         velo = fb_velo.get(p.id)
         out.append(PitcherListItem(
@@ -80,7 +82,7 @@ def list_pitchers(level: list[str] = Query(default=[], description="e.g. ?level=
 def create_pitcher(body: PitcherCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_user)):
     """Add a private pitcher to your account. It's tracked on your dashboard automatically."""
-    pitcher = Pitcher(**body.model_dump(), owner_id=user.id)
+    pitcher = Pitcher(**body.model_dump(), owner_id=user.id, source=SOURCE_MANUAL)
     normalize_level(pitcher)
     db.add(pitcher)
     _commit_or_409(db, f"You already have a pitcher named '{body.name}'")
@@ -211,7 +213,8 @@ def _appearance_out(a: Appearance, pitches: int) -> AppearanceOut:
     return AppearanceOut(
         **{c: getattr(a, c) for c in (
             "id", "game_date", "opponent", "is_start", "hits", "runs", "earned_runs",
-            "walks", "strikeouts", "home_runs", "batters_faced")},
+            "walks", "strikeouts", "home_runs", "batters_faced", "official_pitches", "source",
+            "level")},
         innings_pitched=analytics.innings_display(a.outs),
         pitches=pitches,
     )
@@ -246,7 +249,8 @@ def add_game(pitcher_id: int, body: GameCreate, db: Session = Depends(get_db),
     bf = body.batters_faced
     if bf is None:
         bf = body.outs + body.hits + body.walks + body.hit_by_pitch
-    app = Appearance(pitcher_id=pitcher_id, outs=body.outs, batters_faced=bf, **fields)
+    app = Appearance(pitcher_id=pitcher_id, outs=body.outs, batters_faced=bf, source=BOX_MANUAL,
+                     **fields)
     db.add(app)
     _commit_or_409(db, f"A game on {body.game_date} vs {body.opponent or '(none)'} already exists")
     return _appearance_out(app, 0)

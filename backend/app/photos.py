@@ -28,6 +28,6 @@ def save_photo(pitcher: Pitcher, data: bytes, ext: str) -> None:
 
 
 def remove_photo(pitcher: Pitcher) -> None:
-    if pitcher.photo_url:
+    if pitcher.photo_url and pitcher.photo_url.startswith("/uploads/"):
         (PHOTO_DIR / Path(pitcher.photo_url).name).unlink(missing_ok=True)
-        pitcher.photo_url = None
+    pitcher.photo_url = None

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -48,6 +48,10 @@ class PitcherOut(PitcherBase):
     is_mine: bool = False  # owned by the signed-in user (editable)
     is_public: bool = True  # league data, visible to everyone and read-only
     is_tracked: bool = False  # on the signed-in user's dashboard
+    source: Literal["simulated", "mlb", "csv", "manual"] | None = None
+    mlbam_id: int | None = None
+    synced_at: datetime | None = None
+    verification: dict | None = None  # see sync_mlb.reconcile
 
 
 class PitcherListItem(PitcherOut):
@@ -74,6 +78,9 @@ class AppearanceOut(BaseModel):
     home_runs: int
     batters_faced: int
     pitches: int
+    official_pitches: int | None = None
+    source: str | None = None  # official / derived / manual
+    level: str | None = None
 
 
 class GameCreate(BaseModel):

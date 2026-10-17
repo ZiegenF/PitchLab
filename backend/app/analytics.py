@@ -237,14 +237,27 @@ def recent_window(pitcher: Pitcher) -> int:
     return 5 if pitcher.role == "SP" else 10
 
 
+def stat_appearances(pitcher: Pitcher) -> list[Appearance]:
+    """The games behind a pitcher's headline stats: those at his current level.
+
+    A season split across levels (say AAA then MLB) is reported per level officially; adding
+    them together gives an ERA that matches no official line.
+    """
+    apps = pitcher.appearances  # ordered by game_date
+    if pitcher.level and any(a.level for a in apps):
+        return [a for a in apps if a.level == pitcher.level]
+    return apps
+
+
 def season_and_recent(db: Session, pitcher: Pitcher) -> dict:
     """Season stats, last-N-games stats, and how many games the recent window covers.
 
     recent is None when there aren't enough games for the comparison to mean anything.
     """
-    apps = pitcher.appearances  # ordered by game_date
+    apps = stat_appearances(pitcher)
     n = recent_window(pitcher)
-    season = compute_stats(window_totals(db, pitcher.id, apps))
+    season = compute_stats(window_totals(db, pitcher.id, apps,
+                                         whole_career=len(apps) == len(pitcher.appearances)))
     recent = None
     if len(apps) >= n + 3:
         recent = compute_stats(window_totals(db, pitcher.id, apps[-n:], whole_career=False))

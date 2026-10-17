@@ -704,3 +704,19 @@ code { font-size: 0.92em; background: var(--surface-2); padding: 1px 5px; border
 .tag-portal { background: #fffdf7; color: #8a1428; border-color: #c41e3a; font-weight: 600; }
 .check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
 .check input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* ---- data provenance ---- */
+.bcard-source { padding: 4px 12px 0; }
+.source-tag { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+.source-tag.source-muted { color: var(--text-muted); }
+.source-tag.source-good { color: var(--good-text); }
+.source-tag.source-bad { color: var(--critical); }
+.data-source p { margin: 0 0 8px; color: var(--text-secondary); max-width: 760px; }
+.data-source.source-muted { border-left: 4px solid var(--axis); }
+.data-source.source-good { border-left: 4px solid var(--good-text); }
+.data-source.source-bad { border-left: 4px solid var(--critical); }
+.verify summary { cursor: pointer; font-size: 13px; color: var(--accent); margin: 4px 0; }
+.verify-table { margin-top: 8px; font-size: 13px; }
+.verify-table caption { text-align: left; font-weight: 600; font-size: 12px; padding: 6px 0; color: var(--text-secondary); }
+.verify-table td.mismatch { color: var(--critical); font-weight: 700; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

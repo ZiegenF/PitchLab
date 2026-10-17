@@ -5,9 +5,12 @@ or on rows produced by `seed.py`. Columns used:
 
     player_name, game_date, pitch_type, release_speed, release_spin_rate, plate_x, plate_z,
     description, events, inning, balls, strikes, inning_topbot, home_team, away_team,
-    p_throws, bat_score, post_bat_score
+    p_throws, bat_score, post_bat_score, and optionally pitcher (MLB id) and game_pk
 
-Statcast has no earned/unearned split, so all runs are treated as earned.
+Pitchers are matched by MLB id when the file has one (names aren't unique: there have been two
+active Luis Garcias), otherwise by name. Statcast has no earned/unearned split, so derived box
+scores treat all runs as earned and are marked BOX_DERIVED; synced pitchers get the official
+line from sync_mlb instead.
 """
 
 import csv
@@ -18,12 +21,11 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Appearance, Pitch, Pitcher
+from .models import BOX_DERIVED, SOURCE_CSV, Appearance, Pitch, Pitcher
 
 DESCRIPTION_MAP = {
     "ball": "ball", "blocked_ball": "ball", "pitchout": "ball", "intent_ball": "ball",
-    "automatic_ball": "ball",
-    "called_strike": "called_strike", "automatic_strike": "called_strike",
+    "called_strike": "called_strike",
     "swinging_strike": "swinging_strike", "swinging_strike_blocked": "swinging_strike",
     "foul_tip": "swinging_strike", "missed_bunt": "swinging_strike",
     "foul": "foul", "foul_bunt": "foul", "bunt_foul_tip": "foul", "foul_pitchout": "foul",
@@ -74,8 +76,45 @@ def _teams(row: dict) -> tuple[str, str]:
     return row.get("team", ""), row.get("opponent", "")
 
 
+# Pitch-clock violations: Statcast logs a row, but nothing was thrown (and the official pitch
+# count leaves them out). They still count toward box scores (one can be ball four).
+NOT_THROWN = {"automatic_ball", "automatic_strike"}
+
+
+def thrown(r: dict) -> bool:
+    return r.get("description") not in NOT_THROWN
+
+
+def pitch_from_row(r: dict, app: Appearance) -> Pitch:
+    return Pitch(
+        appearance_id=app.id,
+        pitcher_id=app.pitcher_id,
+        pitch_type=(r.get("pitch_type") or "UN")[:4],
+        velocity=_f(r.get("release_speed")),
+        spin_rate=_f(r.get("release_spin_rate")),
+        plate_x=_f(r.get("plate_x")),
+        plate_z=_f(r.get("plate_z")),
+        result=DESCRIPTION_MAP.get(r.get("description", ""), "ball"),
+        inning=_i(r.get("inning"), 1),
+        balls=_i(r.get("balls")),
+        strikes=_i(r.get("strikes")),
+    )
+
+
+def _find_pitcher(db: Session, owner_id: int | None, name: str, mlbam_id: int | None):
+    owner_match = Pitcher.owner_id.is_(None) if owner_id is None else Pitcher.owner_id == owner_id
+    if mlbam_id is not None:
+        found = db.scalar(select(Pitcher).where(owner_match, Pitcher.mlbam_id == mlbam_id))
+        if found:
+            return found
+        # a pitcher added by name earlier: adopt the id only if he doesn't have a different one
+        return db.scalar(select(Pitcher).where(owner_match, Pitcher.name == name,
+                                               Pitcher.mlbam_id.is_(None)))
+    return db.scalar(select(Pitcher).where(owner_match, Pitcher.name == name))
+
+
 def ingest_rows(db: Session, rows: list[dict], owner_id: int | None = None,
-                role_hint: dict[str, str] | None = None) -> dict:
+                role_hint: dict[str, str] | None = None, source: str = SOURCE_CSV) -> dict:
     """owner_id None loads public league data; otherwise pitchers are private to that user."""
     games: dict[tuple, list[dict]] = defaultdict(list)
     skipped = 0
@@ -84,27 +123,32 @@ def ingest_rows(db: Session, rows: list[dict], owner_id: int | None = None,
         if not name or not game_date:
             skipped += 1
             continue
+        mlbam_id = _i(row.get("pitcher"), 0) or None
         _, opp = _teams(row)
-        games[(name, game_date[:10], opp)].append(row)
+        games[(mlbam_id or name, name, game_date[:10], opp)].append(row)
 
-    pitchers: dict[str, Pitcher] = {}
+    pitchers: dict = {}
     n_pitches = 0
-    for (name, gdate, opp), game_rows in games.items():
-        owner_match = Pitcher.owner_id.is_(None) if owner_id is None else Pitcher.owner_id == owner_id
-        pitcher = pitchers.get(name) or db.scalar(
-            select(Pitcher).where(Pitcher.name == name, owner_match))
+    for (key, name, gdate, opp), game_rows in games.items():
+        mlbam_id = key if isinstance(key, int) else None
+        pitcher = pitchers.get(key) or _find_pitcher(db, owner_id, name, mlbam_id)
         if pitcher is None:
             first = game_rows[0]
+            if mlbam_id is not None and _find_pitcher(db, owner_id, name, None):
+                name = f"{name} ({mlbam_id})"  # a different player with the same name
             pitcher = Pitcher(
                 owner_id=owner_id,
                 name=name,
                 team=_teams(first)[0],
                 throws=(first.get("p_throws") or "R")[:1],
                 role=(role_hint or {}).get(name, "SP"),
+                source=source,
             )
             db.add(pitcher)
-            db.flush()
-        pitchers[name] = pitcher
+        if mlbam_id is not None:
+            pitcher.mlbam_id = mlbam_id
+        db.flush()
+        pitchers[key] = pitcher
 
         gd = date.fromisoformat(gdate)
         app = db.scalar(select(Appearance).where(
@@ -116,26 +160,18 @@ def ingest_rows(db: Session, rows: list[dict], owner_id: int | None = None,
         else:  # re-ingesting the same game replaces it
             app.pitches.clear()
         _fill_box_score(app, game_rows)
+        app.source = BOX_DERIVED
+        app.game_pk = _i(game_rows[0].get("game_pk"), 0) or None
         db.flush()
 
-        db.add_all(Pitch(
-            appearance_id=app.id,
-            pitcher_id=pitcher.id,
-            pitch_type=(r.get("pitch_type") or "UN")[:4],
-            velocity=_f(r.get("release_speed")),
-            spin_rate=_f(r.get("release_spin_rate")),
-            plate_x=_f(r.get("plate_x")),
-            plate_z=_f(r.get("plate_z")),
-            result=DESCRIPTION_MAP.get(r.get("description", ""), "ball"),
-            inning=_i(r.get("inning"), 1),
-            balls=_i(r.get("balls")),
-            strikes=_i(r.get("strikes")),
-        ) for r in game_rows)
-        n_pitches += len(game_rows)
+        pitches = [pitch_from_row(r, app) for r in game_rows if thrown(r)]
+        db.add_all(pitches)
+        n_pitches += len(pitches)
 
     db.commit()
     return {"pitchers": len(pitchers), "appearances": len(games), "pitches": n_pitches,
-            "skipped_rows": skipped, "pitcher_ids": [p.id for p in pitchers.values()]}
+            "skipped_rows": skipped,
+            "pitcher_ids": list(dict.fromkeys(p.id for p in pitchers.values()))}
 
 
 def _fill_box_score(app: Appearance, rows: list[dict]) -> None:

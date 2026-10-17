@@ -6,6 +6,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
 
+# Where a pitcher's data came from (Pitcher.source)
+SOURCE_SIMULATED = "simulated"  # generated demo data, not real
+SOURCE_MLB = "mlb"  # synced from the MLB Stats API (+ Statcast)
+SOURCE_CSV = "csv"  # uploaded Statcast-format CSV
+SOURCE_MANUAL = "manual"  # entered by hand
+
+# Where one game's box score came from (Appearance.source)
+BOX_OFFICIAL = "official"  # official scorer, via the MLB Stats API
+BOX_DERIVED = "derived"  # counted from pitch-by-pitch events (all runs treated as earned)
+BOX_MANUAL = "manual"
+
 
 class User(Base):
     __tablename__ = "users"
@@ -49,6 +60,11 @@ class Pitcher(Base):
     class_year: Mapped[str | None] = mapped_column(String(4))  # NCAA: FR..GR, HS: grad year
     affiliation: Mapped[str | None] = mapped_column(String(60))  # MiLB parent club / HS commit
     in_portal: Mapped[bool | None] = mapped_column(default=False)  # NCAA transfer portal
+    source: Mapped[str | None] = mapped_column(String(12))  # SOURCE_*
+    mlbam_id: Mapped[int | None] = mapped_column(Integer, index=True)  # MLB's player id
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # last check against official totals, see sync_mlb.reconcile
+    verification: Mapped[dict | None] = mapped_column(JSON)
 
     appearances: Mapped[list["Appearance"]] = relationship(
         back_populates="pitcher", cascade="all, delete-orphan", order_by="Appearance.game_date"
@@ -101,6 +117,10 @@ class Appearance(Base):
     home_runs: Mapped[int] = mapped_column(Integer, default=0)
     hit_by_pitch: Mapped[int] = mapped_column(Integer, default=0)
     batters_faced: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str | None] = mapped_column(String(10))  # BOX_*
+    game_pk: Mapped[int | None] = mapped_column(Integer, index=True)  # MLB's game id
+    level: Mapped[str | None] = mapped_column(String(4))  # level this game was played at
+    official_pitches: Mapped[int | None] = mapped_column(Integer)  # official pitch count
 
     pitcher: Mapped[Pitcher] = relationship(back_populates="appearances")
     pitches: Mapped[list["Pitch"]] = relationship(

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import Avatar from "./Avatar";
+import { SourceTag } from "./DataSource";
 import StatDelta from "./StatDelta";
 import { LEVEL_LABEL, affiliationLabel, classLabel } from "../levels";
 import { formatStat } from "../stats";
@@ -33,6 +34,9 @@ export default function BaseballCard({ pitcher, stats = [], recentGames, to, bad
       </div>
       <div className="bcard-sub">{sub}</div>
       {aff && <div className="bcard-aff">{aff}</div>}
+      <div className="bcard-source">
+        <SourceTag pitcher={pitcher} />
+      </div>
       {stats.length > 0 && (
         <dl className="bcard-stats">
           {stats.map(({ def, value, recent }) => (

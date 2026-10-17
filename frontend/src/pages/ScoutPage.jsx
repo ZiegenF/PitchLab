@@ -51,6 +51,7 @@ export default function ScoutPage() {
   const minor = params.get("minor") ?? "";
   const throws = params.get("throws") ?? "";
   const role = params.get("role") ?? "";
+  const data = params.get("data") ?? "";
   const sort = params.get("sort") ?? "name";
   const query = params.get("q") ?? "";
 
@@ -78,9 +79,10 @@ export default function ScoutPage() {
       (p) =>
         (!throws || p.throws === throws) &&
         (!role || p.role === role) &&
+        (!data || (data === "simulated") === (p.source === "simulated")) &&
         (!q || [p.name, p.team, p.hometown, p.affiliation].some((f) => f?.toLowerCase().includes(q)))
     );
-  }, [pitchers, query, throws, role]);
+  }, [pitchers, query, throws, role, data]);
 
   const groups = useMemo(() => {
     if (!base) return [];
@@ -135,6 +137,7 @@ export default function ScoutPage() {
         )}
         <Segmented label="Throws" value={throws} onChange={(v) => setParam("throws", v)} options={[["", "Both hands"], ["R", "RHP"], ["L", "LHP"]]} />
         <Segmented label="Role" value={role} onChange={(v) => setParam("role", v)} options={[["", "All roles"], ["SP", "Starters"], ["RP", "Relievers"]]} />
+        <Segmented label="Data" value={data} onChange={(v) => setParam("data", v)} options={[["", "All data"], ["real", "Real"], ["simulated", "Simulated"]]} />
         <label className="sort">
           <span className="muted small">Sort</span>
           <select value={sort} onChange={(e) => setParam("sort", e.target.value === "name" ? "" : e.target.value)}>

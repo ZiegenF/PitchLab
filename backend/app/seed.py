@@ -5,6 +5,7 @@ are consistent with the pitch data (zone%, whiff%...) instead of being random nu
 
     python -m app.seed            # reset + load the default season
     python -m app.seed --seed 7   # a different (still reproducible) season
+    python -m app.seed --real     # also sync REAL_PITCHERS from MLB (needs network)
 
 Covers every level a scout looks at: high school, college (including the transfer portal), each
 minor-league level and MLB. Velocity scales with level; stuff/command are relative to the
@@ -21,12 +22,19 @@ import shutil
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from sqlalchemy import select
+
 from .analytics import ZONE_BOTTOM, ZONE_HALF_WIDTH, ZONE_TOP
 from .auth import hash_password, utcnow
 from .db import Base, SessionLocal, engine, init_db
 from .ingest import ingest_rows
-from .models import Appearance, Goal, Pitcher, TrackedPitcher, User
+from .models import (BOX_MANUAL, SOURCE_SIMULATED, Appearance, Goal, Pitcher, TrackedPitcher,
+                     User)
 from .photos import PHOTO_DIR
+
+# Real 2024 seasons, synced from MLB with --real: an ace, a two-level rookie (AAA -> MLB) and a
+# prospect who climbed four levels (A+ -> AA -> AAA -> MLB)
+REAL_PITCHERS = [(669373, 2024), (694973, 2024), (695549, 2024)]  # Skubal, Skenes, Jobe
 
 DEMO_EMAIL = "demo@pitchlab.dev"
 DEMO_PASSWORD = "pitchlab-demo"  # local demo data only
@@ -354,7 +362,7 @@ def seed_demo_account(db, rng: random.Random) -> None:
 
     # a private pitcher entered game by game, with walks improving over the season
     mine = Pitcher(owner_id=user.id, name="Jordan Reyes", team="WILDCATS", throws="R", role="SP",
-                   hometown="Phoenix, AZ", level="HS", class_year="2027")
+                   hometown="Phoenix, AZ", level="HS", class_year="2027", source=SOURCE_SIMULATED)
     db.add(mine)
     db.flush()
     d = date(2026, 3, 7)
@@ -368,7 +376,8 @@ def seed_demo_account(db, rng: random.Random) -> None:
             pitcher_id=mine.id, game_date=d, opponent=rng.choice(["EAGLES", "HAWKS", "BEARS", "COUGARS"]),
             is_start=True, outs=outs, hits=hits, runs=runs, earned_runs=max(0, runs - int(rng.random() < 0.3)),
             walks=walks, strikeouts=max(0, round(rng.gauss(outs / 3 * 1.1, 1.5))), home_runs=hrs,
-            hit_by_pitch=int(rng.random() < 0.25), batters_faced=outs + hits + walks + 1))
+            hit_by_pitch=int(rng.random() < 0.25), batters_faced=outs + hits + walks + 1,
+            source=BOX_MANUAL, level="HS"))
         d += timedelta(days=7)
 
     league = {p.name: p for p in db.query(Pitcher).filter(Pitcher.owner_id.is_(None))}
@@ -386,21 +395,33 @@ def seed_demo_account(db, rng: random.Random) -> None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--real", action="store_true", help="also sync REAL_PITCHERS from MLB")
     args = ap.parse_args()
     Base.metadata.drop_all(engine)
     init_db()
     shutil.rmtree(PHOTO_DIR, ignore_errors=True)  # photos belonged to the rows just dropped
     rows = generate_season(args.seed)
     with SessionLocal() as db:
-        result = ingest_rows(db, rows, role_hint={p.name: p.role for p in PROFILES})
+        result = ingest_rows(db, rows, role_hint={p.name: p.role for p in PROFILES},
+                             source=SOURCE_SIMULATED)
         result.pop("pitcher_ids")
         for p in PROFILES:
             db.query(Pitcher).filter_by(name=p.name, owner_id=None).update({
                 "hometown": p.hometown, "level": p.level, "class_year": p.class_year,
                 "affiliation": p.affiliation, "in_portal": p.in_portal})
+            pid = db.scalar(select(Pitcher.id).filter_by(name=p.name, owner_id=None))
+            db.query(Appearance).filter_by(pitcher_id=pid).update({"level": p.level})
         seed_demo_account(db, random.Random(args.seed))
         db.commit()
     print(f"Seeded {result}")
+    if args.real:
+        from .mlb import MlbClient
+        from .sync_mlb import sync_pitcher
+        client = MlbClient()
+        with SessionLocal() as db:
+            for mlbam_id, season in REAL_PITCHERS:
+                p = sync_pitcher(db, client, mlbam_id, season)
+                print(f"{'ok' if p.verification['ok'] else 'MISMATCH'}  {p.name} {season} (real)")
     print(f"Demo account: {DEMO_EMAIL} / {DEMO_PASSWORD}")
 
 

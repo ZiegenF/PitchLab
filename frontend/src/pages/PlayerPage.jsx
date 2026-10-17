@@ -4,6 +4,7 @@ import { api } from "../api";
 import ArsenalTable from "../components/ArsenalTable";
 import Avatar from "../components/Avatar";
 import CoachsCorner from "../components/CoachsCorner";
+import { DataSourcePanel } from "../components/DataSource";
 import GameForm from "../components/GameForm";
 import GameLog from "../components/GameLog";
 import Goals from "../components/Goals";
@@ -95,6 +96,7 @@ export default function PlayerPage() {
       </header>
 
       <StatTiles stats={data.stats} recent={data.recent} recentGames={data.recent_games} />
+      <DataSourcePanel pitcher={p} />
 
       <div className="grid-2 coach-row">
         <CoachsCorner pitcherId={p.id} reloadKey={reloadKey} />
