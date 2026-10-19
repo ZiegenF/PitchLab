@@ -17,7 +17,7 @@ STATCAST_COLUMNS = [
     "pitch_type", "game_date", "release_speed", "release_spin_rate", "plate_x", "plate_z",
     "player_name", "pitcher", "events", "description", "inning", "balls", "strikes",
     "inning_topbot", "home_team", "away_team", "p_throws", "bat_score", "post_bat_score",
-    "game_pk", "game_type",
+    "game_pk", "game_type", "pfx_x", "pfx_z", "release_extension", "release_pos_z",
 ]
 
 

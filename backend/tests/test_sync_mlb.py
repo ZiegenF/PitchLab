@@ -10,6 +10,8 @@ import gzip
 import json
 from pathlib import Path
 
+from datetime import timedelta
+
 from sqlalchemy import select
 
 from app import db as db_module
@@ -17,6 +19,9 @@ from app.models import BOX_DERIVED, BOX_OFFICIAL, Appearance, Pitch, Pitcher
 from app.sync_mlb import reconcile, sync_pitcher
 
 from .test_api import client, row, signup, upload  # noqa: F401  (client is a fixture)
+
+from app import autosync  # noqa: E402  (after test_api, which points the app at a test database)
+from app.auth import utcnow  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures" / "skubal_2024"
 SKUBAL = 669373
@@ -163,3 +168,47 @@ def test_pitch_clock_violations_are_not_pitches(client):
     signup(client)
     r = upload(client, [row(), row(description="automatic_ball", pitch_type="")])
     assert r.json()["pitches"] == 1
+
+
+def test_statcast_movement_is_stored_from_the_pitchers_view(client):
+    """Skubal is left-handed: his fastball, sinker and changeup run to his arm side (his left,
+    negative in TrackMan's convention) and his slider and curve break to his glove side."""
+    pid = sync()
+    arsenal = {a["pitch_type"]: a for a in client.get(f"/api/pitchers/{pid}/arsenal").json()}
+    assert all(arsenal[t]["hb"] < 0 for t in ("FF", "SI", "CH"))
+    assert all(arsenal[t]["hb"] > 0 for t in ("SL", "CU"))
+    assert arsenal["FF"]["ivb"] == 16.3 and arsenal["CU"]["ivb"] < 0
+    assert 6.0 < arsenal["FF"]["extension"] < 7.0
+
+
+def test_auto_sync_refreshes_only_stale_current_season_pitchers(client, monkeypatch):
+    monkeypatch.setattr(autosync, "INTERVAL_HOURS", 6)  # tests otherwise run with it off
+    pid = sync()
+    with db_module.SessionLocal() as db:
+        assert autosync.due(db, 2024) == []  # just synced
+        assert autosync.due(db, 2025) == []  # a 2024 season is final; it isn't refreshed
+        db.get(Pitcher, pid).synced_at = utcnow() - timedelta(hours=7)
+        db.commit()
+        assert [p.id for p in autosync.due(db, 2024)] == [pid]
+
+    results = autosync.run_once(RecordedMlb(), season=2024)
+    assert results == [{"name": "Tarik Skubal", "verified": True, "error": None}]
+    with db_module.SessionLocal() as db:
+        assert autosync.due(db, 2024) == []
+        assert db.query(Pitch).filter_by(pitcher_id=pid).count() == 2866
+
+
+def test_auto_sync_keeps_going_when_one_pitcher_fails(client):
+    pid = sync()
+
+    class Down(RecordedMlb):
+        def person(self, mlbam_id):
+            raise ConnectionError("statsapi.mlb.com unreachable")
+
+    with db_module.SessionLocal() as db:
+        db.get(Pitcher, pid).synced_at = None
+        db.commit()
+    results = autosync.run_once(Down(), season=2024)
+    assert results == [{"name": "Tarik Skubal", "verified": False,
+                        "error": "statsapi.mlb.com unreachable"}]
+    assert client.get(f"/api/pitchers/{pid}").json()["stats"]["era"] == 2.39  # data untouched

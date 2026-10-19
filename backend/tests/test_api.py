@@ -5,6 +5,7 @@ import tempfile
 
 os.environ["DATABASE_URL"] = "sqlite://"  # in-memory, set before the app imports the engine
 os.environ["UPLOAD_DIR"] = tempfile.mkdtemp()
+os.environ["PITCHLAB_SYNC_HOURS"] = "0"  # no background MLB sync during tests
 
 import pytest
 from fastapi.testclient import TestClient
@@ -136,7 +137,8 @@ def test_ingest_statcast_csv_derives_box_score(client):
     ]
     r = upload(client, rows)
     assert r.status_code == 200, r.text
-    assert r.json() == {"pitchers": 1, "appearances": 1, "pitches": 6, "skipped_rows": 0}
+    assert r.json() == {"pitchers": 1, "appearances": 1, "pitches": 6, "skipped_rows": 0,
+                       "format": "statcast"}
 
     pitcher = client.get("/api/pitchers").json()[0]
     assert pitcher["name"] == "Jane Doe" and pitcher["team"] == "NYY"

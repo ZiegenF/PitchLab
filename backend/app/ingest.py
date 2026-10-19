@@ -5,7 +5,8 @@ or on rows produced by `seed.py`. Columns used:
 
     player_name, game_date, pitch_type, release_speed, release_spin_rate, plate_x, plate_z,
     description, events, inning, balls, strikes, inning_topbot, home_team, away_team,
-    p_throws, bat_score, post_bat_score, and optionally pitcher (MLB id) and game_pk
+    p_throws, bat_score, post_bat_score, and optionally pitcher (MLB id), game_pk and the
+    movement columns pfx_x, pfx_z, release_extension, release_pos_z
 
 Pitchers are matched by MLB id when the file has one (names aren't unique: there have been two
 active Luis Garcias), otherwise by name. Statcast has no earned/unearned split, so derived box
@@ -31,6 +32,7 @@ DESCRIPTION_MAP = {
     "foul": "foul", "foul_bunt": "foul", "bunt_foul_tip": "foul", "foul_pitchout": "foul",
     "hit_into_play": "in_play", "hit_into_play_no_out": "in_play", "hit_into_play_score": "in_play",
     "hit_by_pitch": "hit_by_pitch",
+    "unknown": "unknown",  # not a Statcast value: device sessions with no call (devices.py)
 }
 
 HIT_EVENTS = {"single", "double", "triple", "home_run"}
@@ -85,7 +87,17 @@ def thrown(r: dict) -> bool:
     return r.get("description") not in NOT_THROWN
 
 
+def _inches(v, sign: int = 1) -> float | None:
+    f = _f(v)
+    return round(sign * f * 12, 2) if f is not None else None
+
+
 def pitch_from_row(r: dict, app: Appearance) -> Pitch:
+    """A Statcast-shaped row -> Pitch. Device importers (devices.py) may pass ivb/hb directly.
+
+    Statcast pfx_x/pfx_z are feet from the catcher's view; we store inches from the pitcher's
+    view (TrackMan's convention), so horizontal flips sign.
+    """
     return Pitch(
         appearance_id=app.id,
         pitcher_id=app.pitcher_id,
@@ -94,6 +106,10 @@ def pitch_from_row(r: dict, app: Appearance) -> Pitch:
         spin_rate=_f(r.get("release_spin_rate")),
         plate_x=_f(r.get("plate_x")),
         plate_z=_f(r.get("plate_z")),
+        ivb=_f(r["ivb"]) if "ivb" in r else _inches(r.get("pfx_z")),
+        hb=_f(r["hb"]) if "hb" in r else _inches(r.get("pfx_x"), -1),
+        extension=_f(r.get("release_extension")),
+        release_height=_f(r.get("release_pos_z")),
         result=DESCRIPTION_MAP.get(r.get("description", ""), "ball"),
         inning=_i(r.get("inning"), 1),
         balls=_i(r.get("balls")),

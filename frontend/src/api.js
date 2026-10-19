@@ -53,5 +53,5 @@ export const api = {
     );
     return request(`/pitchers/${id}/pitches?${qs}`);
   },
-  uploadStatcast: (file) => request("/ingest/statcast", upload(file)),
+  uploadCsv: (file) => request("/ingest/csv", upload(file)),
 };

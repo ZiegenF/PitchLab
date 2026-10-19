@@ -10,6 +10,8 @@ from .db import Base
 SOURCE_SIMULATED = "simulated"  # generated demo data, not real
 SOURCE_MLB = "mlb"  # synced from the MLB Stats API (+ Statcast)
 SOURCE_CSV = "csv"  # uploaded Statcast-format CSV
+SOURCE_TRACKMAN = "trackman"  # uploaded TrackMan session export
+SOURCE_RAPSODO = "rapsodo"  # uploaded Rapsodo session export
 SOURCE_MANUAL = "manual"  # entered by hand
 
 # Where one game's box score came from (Appearance.source)
@@ -141,7 +143,14 @@ class Pitch(Base):
     spin_rate: Mapped[float | None] = mapped_column(Float)  # rpm
     plate_x: Mapped[float | None] = mapped_column(Float)
     plate_z: Mapped[float | None] = mapped_column(Float)
-    # normalized: ball, called_strike, swinging_strike, foul, in_play, hit_by_pitch
+    # Movement in TrackMan's convention, inches: induced vertical break (gravity removed) and
+    # horizontal break, positive = to the pitcher's right. Statcast is converted to match.
+    ivb: Mapped[float | None] = mapped_column(Float)
+    hb: Mapped[float | None] = mapped_column(Float)
+    extension: Mapped[float | None] = mapped_column(Float)  # ft in front of the rubber
+    release_height: Mapped[float | None] = mapped_column(Float)  # ft above the ground
+    # normalized: ball, called_strike, swinging_strike, foul, in_play, hit_by_pitch, or
+    # unknown (a bullpen with no batter or umpire, e.g. most Rapsodo / TrackMan sessions)
     result: Mapped[str] = mapped_column(String(20))
     inning: Mapped[int] = mapped_column(Integer, default=1)
     balls: Mapped[int] = mapped_column(Integer, default=0)

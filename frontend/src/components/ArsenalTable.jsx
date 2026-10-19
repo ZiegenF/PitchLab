@@ -9,10 +9,17 @@ const COLS = [
   ["whiff_pct", "Whiff%", 1, ""],
   ["chase_pct", "Chase%", 1, ""],
   ["csw_pct", "CSW%", 1, ""],
+  ["ivb", "IVB", 1, ""],
+  ["hb", "HB", 1, ""],
+  ["extension", "Ext", 1, ""],
 ];
+
+// Movement and extension only appear once some pitch has them (older uploads don't).
+const OPTIONAL = new Set(["ivb", "hb", "extension"]);
 
 export default function ArsenalTable({ arsenal }) {
   const maxUsage = Math.max(...arsenal.map((a) => a.usage_pct ?? 0), 1);
+  const cols = COLS.slice(1).filter(([k]) => !OPTIONAL.has(k) || arsenal.some((a) => a[k] != null));
   return (
     <div className="table-scroll">
       <table className="data-table">
@@ -20,7 +27,7 @@ export default function ArsenalTable({ arsenal }) {
           <tr>
             <th className="left">Pitch</th>
             <th className="left usage-col">Usage</th>
-            {COLS.slice(1).map(([k, label]) => (
+            {cols.map(([k, label]) => (
               <th key={k}>{label}</th>
             ))}
             <th>#</th>
@@ -45,7 +52,7 @@ export default function ArsenalTable({ arsenal }) {
                   <span className="usage-label">{fmt(a.usage_pct, 1, "%")}</span>
                 </div>
               </td>
-              {COLS.slice(1).map(([k, , digits]) => (
+              {cols.map(([k, , digits]) => (
                 <td key={k}>{fmt(a[k], digits)}</td>
               ))}
               <td className="muted">{a.pitches.toLocaleString()}</td>

@@ -48,7 +48,7 @@ class PitcherOut(PitcherBase):
     is_mine: bool = False  # owned by the signed-in user (editable)
     is_public: bool = True  # league data, visible to everyone and read-only
     is_tracked: bool = False  # on the signed-in user's dashboard
-    source: Literal["simulated", "mlb", "csv", "manual"] | None = None
+    source: Literal["simulated", "mlb", "csv", "trackman", "rapsodo", "manual"] | None = None
     mlbam_id: int | None = None
     synced_at: datetime | None = None
     verification: dict | None = None  # see sync_mlb.reconcile
@@ -162,6 +162,10 @@ class PitchOut(BaseModel):
     spin_rate: float | None
     plate_x: float | None
     plate_z: float | None
+    ivb: float | None = None
+    hb: float | None = None
+    extension: float | None = None
+    release_height: float | None = None
     result: str
     balls: int
     strikes: int
@@ -172,3 +176,4 @@ class IngestResult(BaseModel):
     appearances: int
     pitches: int
     skipped_rows: int
+    format: str = "statcast"  # statcast / trackman / rapsodo

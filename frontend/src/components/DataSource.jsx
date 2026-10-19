@@ -5,6 +5,8 @@ const SOURCES = {
   simulated: { icon: "◇", tag: "Simulated data", tone: "muted" },
   mlb: { icon: "✓", tag: "Official MLB data", tone: "good" },
   csv: { icon: "↑", tag: "Uploaded CSV", tone: "muted" },
+  trackman: { icon: "↑", tag: "TrackMan upload", tone: "muted" },
+  rapsodo: { icon: "↑", tag: "Rapsodo upload", tone: "muted" },
   manual: { icon: "✎", tag: "Entered by hand", tone: "muted" },
 };
 
@@ -102,7 +104,7 @@ export function DataSourcePanel({ pitcher: p }) {
         <p>
           Box scores (innings, hits, runs, earned runs, walks, strikeouts) come from the{" "}
           <strong>MLB Stats API</strong>, which reports the official scorer's numbers.
-          {pitches && " Pitch data (velocity, spin, location) comes from Statcast."}
+          {pitches && " Pitch data (velocity, spin, movement, location) comes from Statcast."}
           {p.synced_at && ` Last synced ${day(p.synced_at)}.`}
         </p>
         {v?.levels.length > 1 && (
@@ -127,6 +129,23 @@ export function DataSourcePanel({ pitcher: p }) {
         Box scores are counted from the pitch-by-pitch events in an uploaded CSV. Statcast doesn't
         say which runs were earned, so <strong>every run counts as earned</strong> and ERA can
         run high.
+      </p>
+    );
+  } else if (p.source === "trackman") {
+    body = (
+      <p>
+        Pitch data comes straight from uploaded <strong>TrackMan</strong> session files. Game box
+        scores are counted from TrackMan's play results, which don't say which runs were earned,
+        so <strong>every run counts as earned</strong>. Bullpens have no batter or umpire, so
+        they add velocity, movement and location but not whiff or strike rates.
+      </p>
+    );
+  } else if (p.source === "rapsodo") {
+    body = (
+      <p>
+        Bullpen data from uploaded <strong>Rapsodo</strong> sessions: pitch type, velocity, spin,
+        release height and extension. There's no batter or umpire in a bullpen, so outcome stats
+        like whiff and strike rates show no data.
       </p>
     );
   } else {

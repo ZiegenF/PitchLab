@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from . import autosync
 from .db import init_db
 from .photos import UPLOAD_DIR
 from .routers import account, ingest, me, pitchers
@@ -13,7 +14,10 @@ from .routers import account, ingest, me, pitchers
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()  # swap for Alembic migrations once the schema settles
+    stop = autosync.start()
     yield
+    if stop:
+        stop.set()
 
 
 app = FastAPI(title="PitchLab API", version="0.3.0", lifespan=lifespan)
@@ -38,3 +42,9 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/sync/status")
+def sync_status():
+    """Auto-sync of MLB / minor-league pitchers: whether it's on and how the last run went."""
+    return autosync.status

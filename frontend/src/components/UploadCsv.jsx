@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { api } from "../api";
 
+const FORMATS = { trackman: "TrackMan", rapsodo: "Rapsodo", statcast: "Statcast" };
+
 export default function UploadCsv({ onUploaded }) {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -11,8 +13,12 @@ export default function UploadCsv({ onUploaded }) {
     setBusy(true);
     setStatus(null);
     try {
-      const r = await api.uploadStatcast(file);
-      setStatus({ ok: true, text: `Loaded ${r.pitches.toLocaleString()} pitches across ${r.appearances} games` });
+      const r = await api.uploadCsv(file);
+      const games = r.appearances === 1 ? "1 session" : `${r.appearances} sessions`;
+      setStatus({
+        ok: true,
+        text: `Read as a ${FORMATS[r.format]} file: ${r.pitches.toLocaleString()} pitches across ${games}`,
+      });
       onUploaded();
     } catch (err) {
       setStatus({ ok: false, text: err.message });
@@ -26,8 +32,9 @@ export default function UploadCsv({ onUploaded }) {
     <div className="upload">
       <h4>Import data</h4>
       <p className="muted small">
-        Statcast CSV from Baseball Savant, or your own bullpen data in the same columns.
-        Pitchers you upload are private to your account and added to your dugout.
+        A TrackMan or Rapsodo session export, a Statcast CSV from Baseball Savant, or your own
+        bullpen data in Statcast's columns. The format is detected automatically. Pitchers you
+        upload are private to your account and added to your dugout.
       </p>
       <label className={busy ? "upload-btn disabled" : "upload-btn"}>
         {busy ? "Uploading…" : "Upload CSV"}

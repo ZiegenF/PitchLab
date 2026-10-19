@@ -6,11 +6,15 @@ Every stat is one entry in STATS. A formula receives a `totals` dict and returns
     strikeouts, home_runs, hit_by_pitch, batters_faced, games, games_started
   - pitch counters, aggregated in SQL (works the same on Postgres and SQLite): pitches, in_zone,
     swings, whiffs, called_strikes, csw, chases, zone_swings, zone_whiffs, fouls, in_play,
-    first_pitches, first_pitch_strikes, avg_velo, max_velo, avg_spin, fb_velo
+    first_pitches, first_pitch_strikes, located, judged, judged_in_zone, judged_out_of_zone,
+    avg_velo, max_velo, avg_spin, fb_velo, avg_ivb, avg_hb, avg_extension, avg_release_height
 
 To add a stat, append a Stat(...) to STATS; the API and the dashboard pick it up automatically.
 If it needs a new pitch counter, add one line to pitch_counters() too. Set `better` to "higher" or
 "lower" so the stat can be used for goals, trend arrows and insights.
+
+Rates about outcomes divide by `judged` pitches (those with a known result), and Zone% by
+`located` ones, so a bullpen with no batter, umpire or location shows "no data" rather than 0%.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -127,14 +131,14 @@ STATS: list[Stat] = [
     Stat("f_strike_pct", "F-Strike%", "pitching",
          lambda t: rate(t["first_pitch_strikes"], t["first_pitches"], 100), 1, "%",
          "First-pitch strikes (anything but a ball) / batters", default=True, better=H),
-    Stat("zone_pct", "Zone%", "pitching", lambda t: rate(t["in_zone"], t["pitches"], 100), 1, "%",
+    Stat("zone_pct", "Zone%", "pitching", lambda t: rate(t["in_zone"], t["located"], 100), 1, "%",
          "Pitches inside the strike zone", default=True),
     Stat("whiff_pct", "Whiff%", "pitching", lambda t: rate(t["whiffs"], t["swings"], 100), 1, "%",
          "Swinging strikes / swings", default=True, better=H),
     Stat("chase_pct", "Chase%", "pitching",
-         lambda t: rate(t["chases"], t["pitches"] - t["in_zone"], 100), 1, "%",
+         lambda t: rate(t["chases"], t["judged_out_of_zone"], 100), 1, "%",
          "Swings at pitches outside the zone / pitches outside the zone", default=True, better=H),
-    Stat("csw_pct", "CSW%", "pitching", lambda t: rate(t["csw"], t["pitches"], 100), 1, "%",
+    Stat("csw_pct", "CSW%", "pitching", lambda t: rate(t["csw"], t["judged"], 100), 1, "%",
          "Called + swinging strikes / pitches", default=True, better=H),
     Stat("pitches", "Pitches", "pitching", lambda t: t["pitches"], 0,
          description="Pitches thrown"),
@@ -144,18 +148,27 @@ STATS: list[Stat] = [
          description="Fastest pitch (mph)", better=H),
     Stat("avg_spin", "Spin", "pitching", lambda t: t["avg_spin"], 0,
          description="Average spin rate (rpm)"),
-    Stat("swing_pct", "Swing%", "pitching", lambda t: rate(t["swings"], t["pitches"], 100), 1, "%",
+    # movement and release (Statcast, TrackMan, Rapsodo); most telling per pitch type
+    Stat("ivb", "IVB", "pitching", lambda t: t["avg_ivb"], 1, '"',
+         "Induced vertical break: inches of rise or drop from spin, gravity removed"),
+    Stat("hb", "HB", "pitching", lambda t: t["avg_hb"], 1, '"',
+         "Horizontal break in inches, positive = to the pitcher's right"),
+    Stat("extension", "Extension", "pitching", lambda t: t["avg_extension"], 1, " ft",
+         "How far in front of the rubber the ball is released", better=H),
+    Stat("release_height", "Rel. height", "pitching", lambda t: t["avg_release_height"], 2, " ft",
+         "Release height above the ground"),
+    Stat("swing_pct", "Swing%", "pitching", lambda t: rate(t["swings"], t["judged"], 100), 1, "%",
          "Swings / pitches"),
     Stat("zone_swing_pct", "Z-Swing%", "pitching",
-         lambda t: rate(t["zone_swings"], t["in_zone"], 100), 1, "%",
+         lambda t: rate(t["zone_swings"], t["judged_in_zone"], 100), 1, "%",
          "Swings at pitches in the zone / pitches in the zone"),
     Stat("zone_contact_pct", "Z-Contact%", "pitching",
          lambda t: rate(t["zone_swings"] - t["zone_whiffs"], t["zone_swings"], 100), 1, "%",
          "Contact on swings at pitches in the zone", better=L),
     Stat("called_strike_pct", "Called strike%", "pitching",
-         lambda t: rate(t["called_strikes"], t["pitches"], 100), 1, "%", "Called strikes / pitches",
+         lambda t: rate(t["called_strikes"], t["judged"], 100), 1, "%", "Called strikes / pitches",
          better=H),
-    Stat("swstr_pct", "SwStr%", "pitching", lambda t: rate(t["whiffs"], t["pitches"], 100), 1, "%",
+    Stat("swstr_pct", "SwStr%", "pitching", lambda t: rate(t["whiffs"], t["judged"], 100), 1, "%",
          "Swinging strikes / pitches", better=H),
 ]
 
@@ -195,12 +208,17 @@ def _count_if(cond):
 def pitch_counters():
     in_zone = _in_zone()
     swing = Pitch.result.in_(SWING_RESULTS)
-    first_pitch = and_(Pitch.balls == 0, Pitch.strikes == 0)
+    judged = Pitch.result != "unknown"
+    first_pitch = and_(Pitch.balls == 0, Pitch.strikes == 0, judged)
     return {
         "pitches": func.count(Pitch.id),
         "avg_velo": func.avg(Pitch.velocity),
         "max_velo": func.max(Pitch.velocity),
         "avg_spin": func.avg(Pitch.spin_rate),
+        "avg_ivb": func.avg(Pitch.ivb),
+        "avg_hb": func.avg(Pitch.hb),
+        "avg_extension": func.avg(Pitch.extension),
+        "avg_release_height": func.avg(Pitch.release_height),
         "fb_velo": func.avg(case((Pitch.pitch_type.in_(FASTBALLS), Pitch.velocity))),
         "in_zone": _count_if(in_zone),
         "swings": _count_if(swing),
@@ -215,6 +233,10 @@ def pitch_counters():
         "first_pitches": _count_if(first_pitch),
         "first_pitch_strikes": _count_if(
             and_(first_pitch, Pitch.result.not_in(("ball", "hit_by_pitch")))),
+        "located": _count_if(and_(Pitch.plate_x.is_not(None), Pitch.plate_z.is_not(None))),
+        "judged": _count_if(judged),
+        "judged_in_zone": _count_if(and_(judged, in_zone)),
+        "judged_out_of_zone": _count_if(and_(judged, not_(in_zone))),
     }
 
 

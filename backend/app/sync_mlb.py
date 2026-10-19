@@ -53,8 +53,17 @@ def _abbrev(teams: dict[int, dict], team: dict) -> str:
 
 def sync_pitcher(db: Session, client: MlbClient, mlbam_id: int, season: int,
                  with_pitches: bool = True) -> Pitcher:
+    # ---- everything from MLB first: Statcast can take minutes, and nothing should hold a
+    # database write lock while it downloads (the API keeps serving during auto-sync) ----
     person = client.person(mlbam_id)
     teams = client.teams(season)
+    logs = {sport: [s for s in client.game_log(mlbam_id, season, sport) if s.get("gameType", "R") == "R"]
+            for sport in SPORT_LEVELS}
+    logs = {sport: splits for sport, splits in logs.items() if splits}
+    if not logs:
+        raise ValueError(f"{person['fullName']} has no regular-season pitching in {season}")
+    official = {sport: client.season_line(mlbam_id, season, sport) for sport in logs}
+    statcast = client.statcast(mlbam_id, season) if with_pitches and 1 in logs else []
 
     pitcher = db.scalar(select(Pitcher).where(Pitcher.owner_id.is_(None),
                                               Pitcher.mlbam_id == mlbam_id))
@@ -71,12 +80,6 @@ def sync_pitcher(db: Session, client: MlbClient, mlbam_id: int, season: int,
     db.flush()
 
     # ---- official game logs, every level ----
-    logs = {sport: [s for s in client.game_log(mlbam_id, season, sport) if s.get("gameType", "R") == "R"]
-            for sport in SPORT_LEVELS}
-    logs = {sport: splits for sport, splits in logs.items() if splits}
-    if not logs:
-        raise ValueError(f"{pitcher.name} has no regular-season pitching in {season}")
-
     existing = {a.game_pk: a for a in pitcher.appearances if a.game_pk}
     # manual or derived games would double count; this pitcher's data is now official only
     for a in list(pitcher.appearances):
@@ -123,9 +126,9 @@ def sync_pitcher(db: Session, client: MlbClient, mlbam_id: int, season: int,
     pitcher.role = "SP" if starts * 2 >= games else "RP"
 
     # ---- Statcast pitches for MLB games ----
-    if with_pitches and 1 in logs:
+    if statcast:
         by_game = defaultdict(list)
-        for row in client.statcast(mlbam_id, season):
+        for row in statcast:
             if row.get("game_pk"):
                 by_game[int(row["game_pk"])].append(row)
         for app in pitcher.appearances:
@@ -135,18 +138,23 @@ def sync_pitcher(db: Session, client: MlbClient, mlbam_id: int, season: int,
                 db.add_all(pitch_from_row(r, app) for r in by_game[app.game_pk] if thrown(r))
 
     db.flush()
-    pitcher.verification = reconcile(db, client, pitcher, season, logs.keys())
+    pitcher.verification = reconcile(db, client, pitcher, season, logs.keys(), official)
     pitcher.synced_at = utcnow()
     db.commit()
     return pitcher
 
 
-def reconcile(db: Session, client: MlbClient, pitcher: Pitcher, season: int, sports) -> dict:
-    """Compare what we stored with MLB's official season totals, level by level."""
+def reconcile(db: Session, client: MlbClient, pitcher: Pitcher, season: int, sports,
+              official_lines: dict | None = None) -> dict:
+    """Compare what we stored with MLB's official season totals, level by level.
+
+    official_lines ({sport id: season line}) skips fetching them when the caller already has.
+    """
     levels = []
     for sport in sports:
         level = SPORT_LEVELS[sport]
-        official = client.season_line(pitcher.mlbam_id, season, sport) or {}
+        official = (official_lines[sport] if official_lines is not None
+                    else client.season_line(pitcher.mlbam_id, season, sport)) or {}
         apps = [a for a in pitcher.appearances if a.level == level]
         ours = analytics.box_score_totals(apps)
         checks = []

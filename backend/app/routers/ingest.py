@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import require_user, utcnow
 from ..db import get_db
-from ..ingest import ingest_csv
+from ..devices import detect_and_ingest
 from ..models import TrackedPitcher, User
 from ..schemas import IngestResult
 
@@ -13,10 +13,12 @@ router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
-@router.post("/statcast", response_model=IngestResult)
-async def upload_statcast_csv(file: UploadFile, db: Session = Depends(get_db),
-                              user: User = Depends(require_user)):
-    """Upload a Baseball Savant / Statcast CSV export (or your own file using the same columns).
+@router.post("/csv", response_model=IngestResult)
+@router.post("/statcast", response_model=IngestResult, include_in_schema=False)  # older name
+async def upload_csv(file: UploadFile, db: Session = Depends(get_db),
+                     user: User = Depends(require_user)):
+    """Upload a TrackMan or Rapsodo session export, or a Baseball Savant / Statcast CSV (or your
+    own file using Statcast's columns). The format is detected from the header.
 
     Pitchers are matched by name among your own pitchers; new ones are created as yours and
     added to your dashboard.
@@ -25,7 +27,7 @@ async def upload_statcast_csv(file: UploadFile, db: Session = Depends(get_db),
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File too large (50 MB max)")
     try:
-        result = ingest_csv(db, content, owner_id=user.id)
+        result = detect_and_ingest(db, content, owner_id=user.id)
     except (UnicodeDecodeError, ValueError) as e:
         db.rollback()
         raise HTTPException(400, f"Could not parse CSV: {e}")
